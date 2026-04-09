@@ -86,18 +86,20 @@ async function main() {
   ];
 
   for (const book of booksData) {
-    await prisma.book.create({
-      data: {
-        title: book.title,
-        author: book.author,
-        isbn: `ISBN-${Math.random().toString(36).substring(2, 10)}`,
-        genre: book.genre,
-        description: `${book.title} is a great read.`,
-        language: 'English',
-        shelfLocation: `${book.genre}-${Math.floor(Math.random() * 100)}`,
-        available: book.available,
-      },
-    });
+  await prisma.book.create({
+    data: {
+      title: book.title,
+      author: book.author,
+      isbn: `ISBN-${Math.random().toString(36).substring(2, 10)}`,
+      genre: book.genre,
+      description: `${book.title} is a great read.`,
+      language: 'English',
+      shelfLocation: `${book.genre}-${Math.floor(Math.random() * 100)}`,
+      available: book.available,                 // 保留旧字段
+      totalCopies: 1,                            // 新增
+      availableCopies: book.available ? 1 : 0    // 新增：根据 available 初始化
+    }
+  });
   }
 
   // 添加配置项
