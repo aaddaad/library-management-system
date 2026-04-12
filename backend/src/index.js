@@ -6,6 +6,7 @@ const cors = require('cors');
 
 // 只加载你有的图书路由（不加载登录路由，避免报错）
 const booksRouter = require('./routes/books');
+const logsRouter = require('./routes/logs');
 
 const app = express();
 const port = Number(process.env.PORT) || 3001;
@@ -21,6 +22,7 @@ app.get('/health', (req, res) => {
 
 // 挂载你的图书功能（保证能跑）
 app.use('/books', booksRouter);
+app.use('/logs', logsRouter);
 
 // 队友的优雅关闭代码（保留）
 async function shutdown(signal) {
