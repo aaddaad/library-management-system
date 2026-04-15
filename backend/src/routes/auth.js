@@ -1,296 +1,180 @@
 // backend/src/routes/auth.js
 const express = require('express');
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
 const { signToken } = require('../lib/token');
 const { signLibrarianToken } = require('../lib/librarianToken');
 
 const router = express.Router();
 const prisma = new PrismaClient();
-const JWT_SECRET = 'library-management-secret-key-2024';
 
-// --- ç»Ÿä¸€ç™»å½•æ¥å£ (å¤„ç†å­¦ç”Ÿã€å›¾ä¹¦é¦†å‘˜ã€ç®¡ç†å‘˜) ---
+// --- Í³Ò»µÇÂ¼½Ó¿Ú (´¦ÀíÑ§Éú¡¢Í¼Êé¹İÔ±¡¢¹ÜÀíÔ±) ---
 router.post('/login', async (req, res) => {
   const { email, password, type } = req.body;
 
   try {
-    // å­¦ç”Ÿç™»å½•
     if (type === 'student' || !type) {
-      const user = await prisma.user.findUnique({
-        where: { email: email }
-      });
-
+      const user = await prisma.user.findUnique({ where: { email } });
       if (!user) {
-        return res.status(401).json({ error: 'ç”¨æˆ·ä¸å­˜åœ¨', type: 'student' });
+        return res.status(401).json({ error: 'ÓÃ»§²»´æÔÚ', type: 'student' });
       }
-
       if (user.role === 'LIBRARIAN' || user.role === 'ADMIN') {
-        return res.status(401).json({ error: 'è¯·ä½¿ç”¨å¯¹åº”çš„ç®¡ç†å‘˜å…¥å£ç™»å½•', type: user.role.toLowerCase() });
+        return res.status(401).json({ error: 'ÇëÊ¹ÓÃ¶ÔÓ¦µÄ¹ÜÀíÔ±Èë¿ÚµÇÂ¼', type: user.role.toLowerCase() });
       }
-
       const isValid = await bcrypt.compare(password, user.passwordHash);
       if (!isValid) {
-        return res.status(401).json({ error: 'å¯†ç é”™è¯¯', type: 'student' });
+        return res.status(401).json({ error: 'ÃÜÂë´íÎó', type: 'student' });
       }
-
-      const token = signToken({
-        sub: String(user.id),
-        id: user.id,
-        role: user.role
-      });
-
+      const token = signToken({ sub: String(user.id), id: user.id, role: user.role });
       return res.json({
-        message: 'å­¦ç”Ÿç™»å½•æˆåŠŸ',
-        token: token,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        }
+        message: 'Ñ§ÉúµÇÂ¼³É¹¦',
+        token,
+        user: { id: user.id, name: user.name, email: user.email, role: user.role }
       });
     }
 
-    // å›¾ä¹¦é¦†å‘˜ç™»å½•
     if (type === 'librarian') {
-      const librarian = await prisma.librarian.findUnique({
-        where: { employeeId: email }
-      });
-
+      const librarian = await prisma.librarian.findUnique({ where: { employeeId: email } });
       if (!librarian) {
-        return res.status(401).json({ error: 'å·¥å·ä¸å­˜åœ¨', type: 'librarian' });
+        return res.status(401).json({ error: '¹¤ºÅ²»´æÔÚ', type: 'librarian' });
       }
-
       const isValid = await bcrypt.compare(password, librarian.password);
       if (!isValid) {
-        return res.status(401).json({ error: 'å¯†ç é”™è¯¯', type: 'librarian' });
+        return res.status(401).json({ error: 'ÃÜÂë´íÎó', type: 'librarian' });
       }
-
-      const token = signLibrarianToken({
-        id: librarian.id,
-        employeeId: librarian.employeeId,
-        name: librarian.name,
-        role: 'LIBRARIAN'
-      });
-
+      const token = signLibrarianToken({ id: librarian.id, employeeId: librarian.employeeId, name: librarian.name });
       return res.json({
-        message: 'å›¾ä¹¦é¦†å‘˜ç™»å½•æˆåŠŸ',
-        token: token,
-        librarian: {
-          id: librarian.id,
-          name: librarian.name,
-          employeeId: librarian.employeeId
-        }
+        message: 'Í¼Êé¹İÔ±µÇÂ¼³É¹¦',
+        token,
+        librarian: { id: librarian.id, name: librarian.name, employeeId: librarian.employeeId }
       });
     }
 
-    // ç®¡ç†å‘˜ç™»å½•
     if (type === 'admin') {
-      const user = await prisma.user.findUnique({
-        where: { email: email }
-      });
-
+      const user = await prisma.user.findUnique({ where: { email } });
       if (!user) {
-        return res.status(401).json({ error: 'ç”¨æˆ·ä¸å­˜åœ¨', type: 'admin' });
+        return res.status(401).json({ error: 'ÓÃ»§²»´æÔÚ', type: 'admin' });
       }
-
       if (user.role !== 'ADMIN') {
-        return res.status(401).json({ error: 'éç®¡ç†å‘˜è´¦å·', type: 'admin' });
+        return res.status(401).json({ error: '·Ç¹ÜÀíÔ±ÕËºÅ', type: 'admin' });
       }
-
       const isValid = await bcrypt.compare(password, user.passwordHash);
       if (!isValid) {
-        return res.status(401).json({ error: 'å¯†ç é”™è¯¯', type: 'admin' });
+        return res.status(401).json({ error: 'ÃÜÂë´íÎó', type: 'admin' });
       }
-
-      const token = signToken({
-        sub: String(user.id),
-        id: user.id,
-        role: user.role
-      });
-
+      const token = signToken({ sub: String(user.id), id: user.id, role: user.role });
       return res.json({
-        message: 'ç®¡ç†å‘˜ç™»å½•æˆåŠŸ',
-        token: token,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        }
+        message: '¹ÜÀíÔ±µÇÂ¼³É¹¦',
+        token,
+        user: { id: user.id, name: user.name, email: user.email, role: user.role }
       });
     }
 
-    return res.status(400).json({ error: 'æ— æ•ˆçš„ç™»å½•ç±»å‹' });
+    return res.status(400).json({ error: 'ÎŞĞ§µÄµÇÂ¼ÀàĞÍ' });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'ç™»å½•è¿‡ç¨‹ä¸­å‘ç”Ÿé”™è¯¯' });
+    res.status(500).json({ error: 'µÇÂ¼¹ı³ÌÖĞ·¢Éú´íÎó' });
   }
 });
 
-// --- å­¦ç”Ÿç™»å½•æ¥å£ (ä½¿ç”¨æ•°æ®åº“çœŸå®æ•°æ®) ---
+// --- Ñ§ÉúµÇÂ¼½Ó¿Ú (Ê¹ÓÃÊı¾İ¿âÕæÊµÊı¾İ) ---
 router.post('/login-student', async (req, res) => {
   const { email, password } = req.body;
-
   try {
-    const user = await prisma.user.findUnique({
-      where: { email: email }
-    });
-
+    const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      return res.status(401).json({ error: 'ç”¨æˆ·ä¸å­˜åœ¨' });
+      return res.status(401).json({ error: 'ÓÃ»§²»´æÔÚ' });
     }
-
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) {
-      return res.status(401).json({ error: 'å¯†ç é”™è¯¯' });
+      return res.status(401).json({ error: 'ÃÜÂë´íÎó' });
     }
-
-    const token = signToken({
-      sub: String(user.id),
-      id: user.id,
-      role: user.role
-    });
-
-    res.json({
-      message: 'å­¦ç”Ÿç™»å½•æˆåŠŸ',
-      token: token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email
-      }
+    const token = signToken({ sub: String(user.id), id: user.id, role: user.role });
+    return res.json({
+      message: 'Ñ§ÉúµÇÂ¼³É¹¦',
+      token,
+      user: { id: user.id, name: user.name, email: user.email }
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'ç™»å½•è¿‡ç¨‹ä¸­å‘ç”Ÿé”™è¯¯' });
+    res.status(500).json({ error: 'µÇÂ¼¹ı³ÌÖĞ·¢Éú´íÎó' });
   }
 });
 
-// --- å›¾ä¹¦é¦†å‘˜æ³¨å†Œæ¥å£ ---
+// --- Í¼Êé¹ÜÀíÔ±×¢²á ---
 router.post('/register', async (req, res) => {
   const { employeeId, name, password } = req.body;
-
   if (!employeeId || !name || !password) {
-    return res.status(400).json({ error: 'è¯·å¡«å†™å®Œæ•´ä¿¡æ¯' });
+    return res.status(400).json({ error: '¹¤ºÅ¡¢ĞÕÃûºÍÃÜÂë¶¼ÊÇ±ØĞèµÄ' });
   }
   if (password.length < 6) {
-    return res.status(400).json({ error: 'å¯†ç é•¿åº¦ä¸èƒ½å°‘äº6ä½' });
+    return res.status(400).json({ error: 'ÃÜÂë³¤¶È²»ÄÜÉÙÓÚ6Î»' });
   }
-
   try {
-    const existing = await prisma.librarian.findUnique({
-      where: { employeeId: employeeId }
-    });
+    const existing = await prisma.librarian.findUnique({ where: { employeeId } });
     if (existing) {
-      return res.status(400).json({ error: 'å·¥å·å·²å­˜åœ¨' });
+      return res.status(409).json({ error: '¹¤ºÅÒÑ´æÔÚ' });
     }
-
     const hashedPassword = await bcrypt.hash(password, 10);
-    const librarian = await prisma.librarian.create({
-      data: {
-        employeeId: employeeId,
-        name: name,
-        password: hashedPassword
-      }
-    });
-
-    res.status(201).json({
-      message: 'æ³¨å†ŒæˆåŠŸ',
-      librarian: {
-        id: librarian.id,
-        employeeId: librarian.employeeId,
-        name: librarian.name
-      }
+    const librarian = await prisma.librarian.create({ data: { employeeId, name, password: hashedPassword } });
+    return res.status(201).json({
+      message: '×¢²á³É¹¦',
+      librarian: { id: librarian.id, employeeId: librarian.employeeId, name: librarian.name }
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'æ³¨å†Œå¤±è´¥' });
+    res.status(500).json({ error: '×¢²áÊ§°Ü' });
   }
 });
 
-// --- å›¾ä¹¦é¦†å‘˜ç™»å½•æ¥å£ ---
+// --- Í¼Êé¹ÜÀíÔ±µÇÂ¼½Ó¿Ú ---
 router.post('/login-librarian', async (req, res) => {
   const { employeeId, password } = req.body;
-
   try {
-    const librarian = await prisma.librarian.findUnique({
-      where: { employeeId: employeeId }
-    });
-
+    const librarian = await prisma.librarian.findUnique({ where: { employeeId } });
     if (!librarian) {
-      return res.status(401).json({ error: 'å·¥å·ä¸å­˜åœ¨' });
+      return res.status(401).json({ error: '¹¤ºÅ²»´æÔÚ' });
     }
-
     const isValid = await bcrypt.compare(password, librarian.password);
     if (!isValid) {
-      return res.status(401).json({ error: 'å¯†ç é”™è¯¯' });
+      return res.status(401).json({ error: 'ÃÜÂë´íÎó' });
     }
-
-    const token = signLibrarianToken({
-      id: librarian.id,
-      employeeId: librarian.employeeId,
-      name: librarian.name,
-      role: 'LIBRARIAN'
-    });
-
-    res.json({
-      message: 'å›¾ä¹¦é¦†å‘˜ç™»å½•æˆåŠŸ',
-      token: token,
-      librarian: {
-        id: librarian.id,
-        name: librarian.name,
-        employeeId: librarian.employeeId
-      }
+    const token = signLibrarianToken({ id: librarian.id, employeeId: librarian.employeeId, name: librarian.name });
+    return res.json({
+      message: 'Í¼Êé¹ÜÀíÔ±µÇÂ¼³É¹¦',
+      token,
+      librarian: { id: librarian.id, employeeId: librarian.employeeId, name: librarian.name }
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'ç™»å½•è¿‡ç¨‹ä¸­å‘ç”Ÿé”™è¯¯' });
+    res.status(500).json({ error: 'µÇÂ¼¹ı³ÌÖĞ·¢Éú´íÎó' });
   }
 });
 
-// --- ç®¡ç†å‘˜ç™»å½•æ¥å£ ---
+// --- ¹ÜÀíÔ±µÇÂ¼½Ó¿Ú ---
 router.post('/login-admin', async (req, res) => {
   const { email, password } = req.body;
-
   try {
-    const user = await prisma.user.findUnique({
-      where: { email: email }
-    });
-
+    const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      return res.status(401).json({ error: 'ç”¨æˆ·ä¸å­˜åœ¨' });
+      return res.status(401).json({ error: 'ÓÃ»§²»´æÔÚ' });
     }
-
     if (user.role !== 'ADMIN') {
-      return res.status(401).json({ error: 'éç®¡ç†å‘˜è´¦å·' });
+      return res.status(401).json({ error: '·Ç¹ÜÀíÔ±ÕËºÅ' });
     }
-
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) {
-      return res.status(401).json({ error: 'å¯†ç é”™è¯¯' });
+      return res.status(401).json({ error: 'ÃÜÂë´íÎó' });
     }
-
-    const token = signToken({
-      sub: String(user.id),
-      id: user.id,
-      role: user.role
-    });
-
-    res.json({
-      message: 'ç®¡ç†å‘˜ç™»å½•æˆåŠŸ',
-      token: token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      }
+    const token = signToken({ sub: String(user.id), id: user.id, role: user.role });
+    return res.json({
+      message: '¹ÜÀíÔ±µÇÂ¼³É¹¦',
+      token,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role }
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'ç™»å½•è¿‡ç¨‹ä¸­å‘ç”Ÿé”™è¯¯' });
+    res.status(500).json({ error: 'µÇÂ¼¹ı³ÌÖĞ·¢Éú´íÎó' });
   }
 });
 

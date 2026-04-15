@@ -13,14 +13,6 @@ const BOOK_SELECT = {
   genre: true,
   description: true,
   language: true,
-  shelfLocation: true,
-  floor: true,
-  libraryArea: true,
-  shelfNo: true,
-  shelfLevel: true,
-  available: true,
-  totalCopies: true,
-  availableCopies: true,
   createdAt: true,
 };
 
@@ -120,10 +112,23 @@ router.get('/', async (req, res) => {
   try {
     const books = await prisma.book.findMany({
       orderBy: { id: 'asc' },
-      select: BOOK_SELECT,
+      include: {
+        copies: {
+          select: { status: true }
+        }
+      }
     });
 
-    res.json({ data: books });
+    const booksWithCount = books.map(book => {
+      const availableCopies = book.copies.filter(c => c.status === 'AVAILABLE').length;
+      return {
+        ...book,
+        availableCopies: availableCopies,
+        totalCopies: book.copies.length
+      };
+    });
+
+    res.json({ data: booksWithCount });
   } catch (error) {
     res.status(500).json({
       error: 'Failed to fetch books',
@@ -137,7 +142,6 @@ router.get('/search', async (req, res) => {
   try {
     const { title, author, keyword } = req.query;
     
-    // 构建搜索条件
     const whereCondition = {};
     
     if (title || author || keyword) {
@@ -162,29 +166,33 @@ router.get('/search', async (req, res) => {
     const books = await prisma.book.findMany({
       where: whereCondition,
       orderBy: { id: 'asc' },
-      select: {
-        id: true,
-        title: true,
-        author: true,
-        isbn: true,
-        genre: true,
-        description: true,
-        language: true,
-        shelfLocation: true,
-        floor: true,
-        libraryArea: true,
-        shelfNo: true,
-        shelfLevel: true,
-        available: true,
-        totalCopies: true,
-        availableCopies: true,
-      },
+      include: {
+        copies: {
+          select: { status: true }
+        }
+      }
+    });
+    
+    const booksWithCount = books.map(book => {
+      const availableCopies = book.copies.filter(c => c.status === 'AVAILABLE').length;
+      return {
+        id: book.id,
+        title: book.title,
+        author: book.author,
+        isbn: book.isbn,
+        genre: book.genre,
+        description: book.description,
+        language: book.language,
+        createdAt: book.createdAt,
+        availableCopies: availableCopies,
+        totalCopies: book.copies.length
+      };
     });
     
     res.json({ 
       success: true, 
-      data: books,
-      count: books.length 
+      data: booksWithCount,
+      count: booksWithCount.length 
     });
   } catch (error) {
     res.status(500).json({
@@ -206,7 +214,12 @@ router.get('/:id', async (req, res) => {
   try {
     const book = await prisma.book.findUnique({
       where: { id: bookId },
-      include: BOOK_DETAIL_INCLUDE,
+      include: {
+        ...BOOK_DETAIL_INCLUDE,
+        copies: {
+          select: { id: true, barcode: true, floor: true, libraryArea: true, shelfNo: true, shelfLevel: true, status: true }
+        }
+      }
     });
 
     if (!book) {
@@ -219,10 +232,14 @@ router.get('/:id', async (req, res) => {
         ? null
         : Number((book.ratings.reduce((sum, rating) => sum + rating.stars, 0) / ratingCount).toFixed(2));
 
+    const availableCopies = book.copies.filter(c => c.status === 'AVAILABLE').length;
+
     res.json({
       success: true,
       data: {
         ...book,
+        availableCopies: availableCopies,
+        totalCopies: book.copies.length,
         stats: {
           averageRating,
           activeLoans: book.loans.filter((loan) => !loan.returnDate).length,
@@ -245,43 +262,10 @@ router.post('/', requireLibrarianAuth, async (req, res) => {
   const genre = normalizeText(req.body.genre);
   const description = normalizeText(req.body.description) || null;
   const language = normalizeText(req.body.language) || 'English';
-  const shelfLocation = normalizeText(req.body.shelfLocation) || null;
-  const libraryArea = normalizeText(req.body.libraryArea) || null;
-  const shelfNo = normalizeText(req.body.shelfNo) || null;
-  const floorInput = parseOptionalInteger(req.body.floor);
-  const shelfLevelInput = parseOptionalInteger(req.body.shelfLevel);
-  const floor = floorInput ?? null;
-  const shelfLevel = shelfLevelInput ?? null;
-  const totalCopiesInput = parseOptionalInteger(req.body.totalCopies);
-  const availableCopiesInput = parseOptionalInteger(req.body.availableCopies);
-  const totalCopies = totalCopiesInput ?? 1;
-  const availableCopies = availableCopiesInput ?? totalCopies;
 
   if (!title || !author || !isbn || !genre) {
     return res.status(400).json({
       error: 'title, author, isbn and genre are required',
-    });
-  }
-
-  if (
-    Number.isNaN(floor) ||
-    Number.isNaN(shelfLevel) ||
-    Number.isNaN(totalCopies) ||
-    Number.isNaN(availableCopies) ||
-    (floor !== null && floor < 1) ||
-    (shelfLevel !== null && shelfLevel < 1) ||
-    totalCopies < 1 ||
-    availableCopies < 0
-  ) {
-    return res.status(400).json({
-      error:
-        'floor and shelfLevel must be positive integers when provided, totalCopies must be at least 1 and availableCopies cannot be negative',
-    });
-  }
-
-  if (availableCopies > totalCopies) {
-    return res.status(400).json({
-      error: 'availableCopies cannot be greater than totalCopies',
     });
   }
 
@@ -294,14 +278,6 @@ router.post('/', requireLibrarianAuth, async (req, res) => {
         genre,
         description,
         language,
-        shelfLocation,
-        floor,
-        libraryArea,
-        shelfNo,
-        shelfLevel,
-        totalCopies,
-        availableCopies,
-        available: availableCopies > 0,
       },
       select: BOOK_SELECT,
     });

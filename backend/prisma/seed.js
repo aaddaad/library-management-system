@@ -85,41 +85,21 @@ async function main() {
     { title: 'The Five Dysfunctions of a Team', author: 'Patrick Lencioni', genre: 'Management', available: false },
   ];
 
-  const locationByGenre = {
-    Technology: { floor: 3, libraryArea: 'Tech Stack', shelfPrefix: 'T' },
-    Fiction: { floor: 2, libraryArea: 'Literature Hall', shelfPrefix: 'F' },
-    Science: { floor: 4, libraryArea: 'Science Archive', shelfPrefix: 'S' },
-    History: { floor: 5, libraryArea: 'History Collection', shelfPrefix: 'H' },
-    Management: { floor: 6, libraryArea: 'Business Corner', shelfPrefix: 'M' },
-  };
-
-  for (const [index, book] of booksData.entries()) {
-    const locationMeta = locationByGenre[book.genre] || {
-      floor: 1,
-      libraryArea: 'General Collection',
-      shelfPrefix: 'G',
-    };
-    const shelfNo = `${locationMeta.shelfPrefix}-${String((index % 8) + 1).padStart(2, '0')}`;
-    const shelfLevel = (index % 5) + 1;
-
-    await prisma.book.create({
-      data: {
-        title: book.title,
-        author: book.author,
-        isbn: `ISBN-${Math.random().toString(36).substring(2, 10)}`,
-        genre: book.genre,
-        description: `${book.title} is a great read.`,
-        language: 'English',
-        shelfLocation: `Floor ${locationMeta.floor} | ${locationMeta.libraryArea} | ${shelfNo} | Level ${shelfLevel}`,
-        floor: locationMeta.floor,
-        libraryArea: locationMeta.libraryArea,
-        shelfNo,
-        shelfLevel,
-        available: book.available,
-        totalCopies: 1,
-        availableCopies: book.available ? 1 : 0,
-      },
-    });
+  for (const book of booksData) {
+  await prisma.book.create({
+    data: {
+      title: book.title,
+      author: book.author,
+      isbn: `ISBN-${Math.random().toString(36).substring(2, 10)}`,
+      genre: book.genre,
+      description: `${book.title} is a great read.`,
+      language: 'English',
+      shelfLocation: `${book.genre}-${Math.floor(Math.random() * 100)}`,
+      available: book.available,                 // 保留旧字段
+      totalCopies: 1,                            // 新增
+      availableCopies: book.available ? 1 : 0    // 新增：根据 available 初始化
+    }
+  });
   }
 
   // 添加配置项

@@ -11,6 +11,8 @@ function BookSearch() {
   const [selectedBook, setSelectedBook] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
+  const [availableCopies, setAvailableCopies] = useState({});
+  const [showCopies, setShowCopies] = useState(null);
 
   const token = localStorage.getItem('token');
 
@@ -41,7 +43,28 @@ function BookSearch() {
     }
   };
 
-  const handleBorrow = async (bookId) => {
+  // 获取可借副本列表
+  const fetchAvailableCopies = async (bookId) => {
+    if (!token) {
+      setMessage('Please login first');
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:3001/api/reader/available-copies/${bookId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      const copies = data.copies || [];
+      setAvailableCopies(prev => ({ ...prev, [bookId]: copies }));
+      setShowCopies(showCopies === bookId ? null : bookId);
+    } catch (error) {
+      setMessage('Failed to get copy list');
+    }
+  };
+
+  // 借阅具体副本
+  const handleBorrowCopy = async (copyId, bookTitle) => {
     if (!token) {
       setMessage('Please login first');
       return;
@@ -49,20 +72,20 @@ function BookSearch() {
 
     setMessage('');
     try {
-      const response = await fetch('http://localhost:3001/loans', {
+      const response = await fetch(`http://localhost:3001/api/reader/borrow/${copyId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ bookId })
+        }
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        setMessage('Borrow success!');
+        setMessage(`Borrow success! ${bookTitle}`);
         handleSearch();
+        setShowCopies(null);
       } else {
         setMessage(data.message || 'Borrow failed');
       }
@@ -151,18 +174,47 @@ function BookSearch() {
                   <h3 style={{ marginTop: 0, color: '#007bff' }}>{book.title}</h3>
                   <p><strong>Author:</strong> {book.author}</p>
                   <p><strong>ISBN:</strong> {book.isbn}</p>
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
+                  <p><strong>Stock:</strong> {book.availableCopies || 0} / {book.totalCopies || 1}</p>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
                     <button
                       onClick={() => handleViewDetails(book.id)}
                       style={{ padding: '6px 12px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                     >
-                      查看详情
+                      View Details
                     </button>
+                    {book.availableCopies > 0 && (
+                      <button
+                        onClick={() => fetchAvailableCopies(book.id)}
+                        style={{ padding: '6px 12px', background: '#17a2b8', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                      >
+                        {showCopies === book.id ? 'Hide Copies' : 'View Copies'}
+                      </button>
+                    )}
                   </div>
-                  {book.available && book.availableCopies > 0 && (
-                    <button onClick={() => handleBorrow(book.id)} style={{ marginTop: '10px', padding: '6px 12px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                      Borrow
-                    </button>
+
+                  {showCopies === book.id && availableCopies[book.id] && availableCopies[book.id].length > 0 && (
+                    <div style={{ marginTop: '12px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #e9ecef' }}>
+                      <strong style={{ display: 'block', marginBottom: '8px' }}>Available Copies:</strong>
+                      {availableCopies[book.id].map(copy => (
+                        <div key={copy.id} style={{ marginBottom: '8px', padding: '6px', background: 'white', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                          <span style={{ fontSize: '12px' }}>
+                            Barcode: {copy.barcode} | Location: {copy.floor}F {copy.libraryArea} {copy.shelfNo}-{copy.shelfLevel}
+                          </span>
+                          <button
+                            onClick={() => handleBorrowCopy(copy.id, book.title)}
+                            style={{ padding: '4px 10px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                          >
+                            Borrow This Copy
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {showCopies === book.id && (!availableCopies[book.id] || availableCopies[book.id].length === 0) && (
+                    <div style={{ marginTop: '12px', padding: '10px', background: '#fff3cd', borderRadius: '4px', color: '#856404' }}>
+                      No available copies at this moment.
+                    </div>
                   )}
                 </div>
               ))}

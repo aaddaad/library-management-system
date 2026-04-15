@@ -1,6 +1,26 @@
 const prisma = require('../lib/prisma');
 const { verifyLibrarianToken } = require('../lib/librarianToken');
 
+function normalizeQueryResult(result) {
+  if (Array.isArray(result)) {
+    return result.length > 0 ? result[0] : null;
+  }
+  return result || null;
+}
+
+async function findLibrarianById(id) {
+  if (prisma.librarian) {
+    return prisma.librarian.findUnique({ where: { id } });
+  }
+  const result = await prisma.$queryRaw`
+    SELECT id, employee_id AS "employeeId", name, created_at AS "createdAt", updated_at AS "updatedAt"
+    FROM librarians
+    WHERE id = ${id}
+    LIMIT 1
+  `;
+  return normalizeQueryResult(result);
+}
+
 function extractBearerToken(authorizationHeader) {
   if (!authorizationHeader) {
     return null;
@@ -32,16 +52,7 @@ async function requireLibrarianAuth(req, res, next) {
       return res.status(401).json({ error: 'Token payload is invalid' });
     }
 
-    const librarian = await prisma.librarian.findUnique({
-      where: { id: librarianId },
-      select: {
-        id: true,
-        employeeId: true,
-        name: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const librarian = await findLibrarianById(librarianId);
 
     if (!librarian) {
       return res.status(401).json({ error: 'Librarian no longer exists' });

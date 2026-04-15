@@ -19,6 +19,13 @@ enum HoldStatus {
   CANCELLED
 }
 
+enum CopyStatus {
+  AVAILABLE
+  BORROWED
+  LOST
+  DAMAGED
+}
+
 model User {
   id                     Int                     @id @default(autoincrement())
   name                   String
@@ -43,24 +50,30 @@ model Book {
   genre           String
   description     String?
   language        String     @default("English")
-  shelfLocation   String?
-  floor           Int?
-  libraryArea     String?
-  shelfNo         String?
-  shelfLevel      Int?
-  available       Boolean    @default(true)
-  totalCopies     Int        @default(1)
-  availableCopies Int        @default(1)
   createdAt       DateTime   @default(now())
-  loans           Loan[]
+  copies          Copy[]
   ratings         Rating[]
   holds           Hold[]
   wishlists       Wishlist[]
 }
 
+model Copy {
+  id             Int        @id @default(autoincrement())
+  bookId         Int
+  book           Book       @relation(fields: [bookId], references: [id])
+  barcode        String     @unique
+  floor          Int
+  libraryArea    String
+  shelfNo        String
+  shelfLevel     Int
+  status         CopyStatus @default(AVAILABLE)
+  createdAt      DateTime   @default(now())
+  loans          Loan[]
+}
+
 model Loan {
   id           Int       @id @default(autoincrement())
-  bookId       Int
+  copyId       Int
   userId       Int
   checkoutDate DateTime  @default(now())
   dueDate      DateTime
@@ -69,7 +82,7 @@ model Loan {
   finePaid     Boolean?  @default(false)
   fineForgiven Boolean?  @default(false)
   createdAt    DateTime  @default(now())
-  book         Book      @relation(fields: [bookId], references: [id])
+  copy         Copy      @relation(fields: [copyId], references: [id])
   user         User      @relation(fields: [userId], references: [id])
 }
 
