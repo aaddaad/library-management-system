@@ -13,6 +13,20 @@ const initialForm = {
   availableCopies: '1',
 }
 
+function normalizeBookToForm(book) {
+  return {
+    title: book.title || '',
+    author: book.author || '',
+    isbn: book.isbn || '',
+    genre: book.genre || '',
+    description: book.description || '',
+    language: book.language || 'English',
+    shelfLocation: book.shelfLocation || '',
+    totalCopies: String(book.totalCopies ?? 0),
+    availableCopies: String(book.availableCopies ?? 0),
+  }
+}
+
 function formatDate(value) {
   if (!value) return '暂无'
 
@@ -32,11 +46,13 @@ export default function LibrarianBookManager({
 }) {
   const [books, setBooks] = useState([])
   const [form, setForm] = useState(initialForm)
+  const [editingBookId, setEditingBookId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const isEditing = editingBookId !== null
 
   const fetchBooks = async () => {
     setLoading(true)
@@ -119,8 +135,12 @@ export default function LibrarianBookManager({
 
     try {
       const token = localStorage.getItem('librarianToken')
-      const response = await fetch(`${LIBRARIAN_API_URL}/books`, {
-        method: 'POST',
+      const response = await fetch(
+        isEditing
+          ? `${LIBRARIAN_API_URL}/books/${editingBookId}`
+          : `${LIBRARIAN_API_URL}/books`,
+        {
+        method: isEditing ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
@@ -130,7 +150,8 @@ export default function LibrarianBookManager({
           totalCopies: Number(form.totalCopies),
           availableCopies: Number(form.availableCopies),
         }),
-      })
+        }
+      )
 
       const data = await response.json()
 
@@ -140,19 +161,34 @@ export default function LibrarianBookManager({
       }
 
       if (!response.ok) {
-        throw new Error(data.error || '新增图书失败')
+        throw new Error(data.error || (isEditing ? '更新图书失败' : '新增图书失败'))
       }
 
-      setBooks((current) =>
-        [...current, data.book].sort((left, right) => left.id - right.id)
-      )
+      setBooks((current) => {
+        if (isEditing) {
+          return current.map((book) => (
+            book.id === data.book.id ? data.book : book
+          ))
+        }
+
+        return [...current, data.book].sort((left, right) => left.id - right.id)
+      })
       setForm(initialForm)
-      setSuccess('图书新增成功')
+      setEditingBookId(null)
+      setSuccess(isEditing ? `已更新《${data.book.title}》` : '图书新增成功')
     } catch (submitError) {
-      setError(submitError.message || '新增图书失败')
+      setError(submitError.message || (isEditing ? '更新图书失败' : '新增图书失败'))
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleEdit = (book) => {
+    setEditingBookId(book.id)
+    setForm(normalizeBookToForm(book))
+    setError('')
+    setSuccess('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleDelete = async (book) => {
@@ -187,6 +223,10 @@ export default function LibrarianBookManager({
       }
 
       setBooks((current) => current.filter((item) => item.id !== book.id))
+      if (editingBookId === book.id) {
+        setEditingBookId(null)
+        setForm(initialForm)
+      }
       setSuccess(`已删除《${book.title}》`)
     } catch (deleteError) {
       setError(deleteError.message || '删除图书失败')
@@ -196,6 +236,7 @@ export default function LibrarianBookManager({
   }
 
   const handleReset = () => {
+    setEditingBookId(null)
     setForm(initialForm)
     setError('')
     setSuccess('')
@@ -238,9 +279,21 @@ export default function LibrarianBookManager({
       <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-6">
         <section className="bg-white rounded-2xl shadow-lg p-6 h-fit">
           <div className="mb-6">
-            <h2 className="text-xl font-bold text-gray-800">新增图书</h2>
-            <p className="text-sm text-gray-500 mt-1">带 * 的字段为必填项</p>
+            <h2 className="text-xl font-bold text-gray-800">
+              {isEditing ? '编辑图书' : '新增图书'}
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              {isEditing
+                ? '可在这里修正总册数、可借册数和书架位置等信息'
+                : '带 * 的字段为必填项'}
+            </p>
           </div>
+
+          {isEditing && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              正在编辑已有馆藏记录。修改完成后点击“保存修改”，或点“取消编辑”返回新增模式。
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -385,14 +438,16 @@ export default function LibrarianBookManager({
                 disabled={saving}
                 className="w-full rounded-lg border border-gray-300 py-3 font-semibold text-gray-700 hover:bg-gray-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                重置表单
+                {isEditing ? '取消编辑' : '重置表单'}
               </button>
               <button
                 type="submit"
                 disabled={saving}
                 className="w-full rounded-lg bg-blue-500 text-white py-3 font-semibold hover:bg-blue-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {saving ? '提交中...' : '新增图书'}
+                {saving
+                  ? (isEditing ? '保存中...' : '提交中...')
+                  : (isEditing ? '保存修改' : '新增图书')}
               </button>
             </div>
           </form>
@@ -467,13 +522,22 @@ export default function LibrarianBookManager({
                       )}
                     </div>
 
-                    <button
-                      onClick={() => void handleDelete(book)}
-                      disabled={deletingId === book.id}
-                      className="shrink-0 px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {deletingId === book.id ? '删除中...' : '删除图书'}
-                    </button>
+                    <div className="shrink-0 flex flex-col gap-2 sm:flex-row lg:flex-col">
+                      <button
+                        onClick={() => handleEdit(book)}
+                        disabled={saving || deletingId === book.id}
+                        className="px-4 py-2 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        编辑图书
+                      </button>
+                      <button
+                        onClick={() => void handleDelete(book)}
+                        disabled={deletingId === book.id}
+                        className="px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {deletingId === book.id ? '删除中...' : '删除图书'}
+                      </button>
+                    </div>
                   </div>
                 </article>
               ))}

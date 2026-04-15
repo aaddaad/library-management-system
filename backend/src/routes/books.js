@@ -13,6 +13,10 @@ const BOOK_SELECT = {
   genre: true,
   description: true,
   language: true,
+  shelfLocation: true,
+  available: true,
+  totalCopies: true,
+  availableCopies: true,
   createdAt: true,
 };
 
@@ -79,6 +83,8 @@ const BOOK_DETAIL_INCLUDE = {
   },
 };
 
+const BOOK_BASE_REQUIRED_FIELDS = ['title', 'author', 'isbn', 'genre'];
+
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -90,6 +96,102 @@ function parseOptionalInteger(value) {
 
   const parsedValue = Number.parseInt(value, 10);
   return Number.isNaN(parsedValue) ? Number.NaN : parsedValue;
+}
+
+function formatCopyLocation(copy) {
+  if (!copy) {
+    return null;
+  }
+
+  const floor = copy.floor ? `${copy.floor}F` : '';
+  const area = normalizeText(copy.libraryArea);
+  const shelfNo = normalizeText(copy.shelfNo);
+  const shelfLevel = copy.shelfLevel ? String(copy.shelfLevel) : '';
+  const shelfSegment = [shelfNo, shelfLevel].filter(Boolean).join('-');
+
+  return [floor, area, shelfSegment].filter(Boolean).join(' ') || null;
+}
+
+function hydrateBookRecord(book) {
+  const copies = Array.isArray(book.copies) ? book.copies : [];
+  const computedAvailableCopies = copies.filter((copy) => copy.status === 'AVAILABLE').length;
+  const computedTotalCopies = copies.length;
+
+  const totalCopies = Number.isInteger(book.totalCopies)
+    ? book.totalCopies
+    : computedTotalCopies > 0
+      ? computedTotalCopies
+      : 1;
+
+  const availableCopies = Number.isInteger(book.availableCopies)
+    ? book.availableCopies
+    : computedTotalCopies > 0
+      ? computedAvailableCopies
+      : book.available === false
+        ? 0
+        : totalCopies;
+
+  return {
+    ...book,
+    shelfLocation: book.shelfLocation || formatCopyLocation(copies[0]) || null,
+    available: typeof book.available === 'boolean' ? book.available : availableCopies > 0,
+    totalCopies,
+    availableCopies,
+  };
+}
+
+function stripCopies(book) {
+  const { copies, ...bookWithoutCopies } = book;
+  return bookWithoutCopies;
+}
+
+function buildBookPayload(body) {
+  const title = normalizeText(body.title);
+  const author = normalizeText(body.author);
+  const isbn = normalizeText(body.isbn);
+  const genre = normalizeText(body.genre);
+  const description = normalizeText(body.description) || null;
+  const language = normalizeText(body.language) || 'English';
+  const shelfLocation = normalizeText(body.shelfLocation) || null;
+  const totalCopiesInput = parseOptionalInteger(body.totalCopies);
+  const availableCopiesInput = parseOptionalInteger(body.availableCopies);
+  const totalCopies = totalCopiesInput ?? 1;
+  const availableCopies = availableCopiesInput ?? totalCopies;
+
+  return {
+    title,
+    author,
+    isbn,
+    genre,
+    description,
+    language,
+    shelfLocation,
+    totalCopies,
+    availableCopies,
+  };
+}
+
+function validateBookPayload(payload) {
+  const missingFields = BOOK_BASE_REQUIRED_FIELDS.filter((field) => !payload[field]);
+
+  if (missingFields.length > 0) {
+    return 'title, author, isbn and genre are required';
+  }
+
+  if (
+    Number.isNaN(payload.totalCopies) ||
+    Number.isNaN(payload.availableCopies) ||
+    payload.totalCopies < 1 ||
+    payload.availableCopies < 0
+  ) {
+    return 'totalCopies must be at least 1 and availableCopies cannot be negative';
+  }
+
+  if (payload.availableCopies > payload.totalCopies) {
+    return 'availableCopies cannot be greater than totalCopies';
+  }
+
+  return null;
 }
 
 async function writeAuditLog(action, entityId, detail) {
@@ -114,21 +216,20 @@ router.get('/', async (req, res) => {
       orderBy: { id: 'asc' },
       include: {
         copies: {
-          select: { status: true }
-        }
-      }
+          select: {
+            status: true,
+            floor: true,
+            libraryArea: true,
+            shelfNo: true,
+            shelfLevel: true,
+          },
+        },
+      },
     });
 
-    const booksWithCount = books.map(book => {
-      const availableCopies = book.copies.filter(c => c.status === 'AVAILABLE').length;
-      return {
-        ...book,
-        availableCopies: availableCopies,
-        totalCopies: book.copies.length
-      };
-    });
+    const booksWithSummary = books.map((book) => stripCopies(hydrateBookRecord(book)));
 
-    res.json({ data: booksWithCount });
+    res.json({ data: booksWithSummary });
   } catch (error) {
     res.status(500).json({
       error: 'Failed to fetch books',
@@ -141,20 +242,20 @@ router.get('/', async (req, res) => {
 router.get('/search', async (req, res) => {
   try {
     const { title, author, keyword } = req.query;
-    
+
     const whereCondition = {};
-    
+
     if (title || author || keyword) {
       whereCondition.OR = [];
-      
+
       if (title) {
         whereCondition.OR.push({ title: { contains: title } });
       }
-      
+
       if (author) {
         whereCondition.OR.push({ author: { contains: author } });
       }
-      
+
       if (keyword) {
         whereCondition.OR.push(
           { title: { contains: keyword } },
@@ -162,37 +263,29 @@ router.get('/search', async (req, res) => {
         );
       }
     }
-    
+
     const books = await prisma.book.findMany({
       where: whereCondition,
       orderBy: { id: 'asc' },
       include: {
         copies: {
-          select: { status: true }
-        }
-      }
+          select: {
+            status: true,
+            floor: true,
+            libraryArea: true,
+            shelfNo: true,
+            shelfLevel: true,
+          },
+        },
+      },
     });
-    
-    const booksWithCount = books.map(book => {
-      const availableCopies = book.copies.filter(c => c.status === 'AVAILABLE').length;
-      return {
-        id: book.id,
-        title: book.title,
-        author: book.author,
-        isbn: book.isbn,
-        genre: book.genre,
-        description: book.description,
-        language: book.language,
-        createdAt: book.createdAt,
-        availableCopies: availableCopies,
-        totalCopies: book.copies.length
-      };
-    });
-    
-    res.json({ 
-      success: true, 
-      data: booksWithCount,
-      count: booksWithCount.length 
+
+    const booksWithSummary = books.map((book) => stripCopies(hydrateBookRecord(book)));
+
+    res.json({
+      success: true,
+      data: booksWithSummary,
+      count: booksWithSummary.length,
     });
   } catch (error) {
     res.status(500).json({
@@ -217,9 +310,17 @@ router.get('/:id', async (req, res) => {
       include: {
         ...BOOK_DETAIL_INCLUDE,
         copies: {
-          select: { id: true, barcode: true, floor: true, libraryArea: true, shelfNo: true, shelfLevel: true, status: true }
-        }
-      }
+          select: {
+            id: true,
+            barcode: true,
+            floor: true,
+            libraryArea: true,
+            shelfNo: true,
+            shelfLevel: true,
+            status: true,
+          },
+        },
+      },
     });
 
     if (!book) {
@@ -232,14 +333,12 @@ router.get('/:id', async (req, res) => {
         ? null
         : Number((book.ratings.reduce((sum, rating) => sum + rating.stars, 0) / ratingCount).toFixed(2));
 
-    const availableCopies = book.copies.filter(c => c.status === 'AVAILABLE').length;
+    const hydratedBook = hydrateBookRecord(book);
 
     res.json({
       success: true,
       data: {
-        ...book,
-        availableCopies: availableCopies,
-        totalCopies: book.copies.length,
+        ...hydratedBook,
         stats: {
           averageRating,
           activeLoans: book.loans.filter((loan) => !loan.returnDate).length,
@@ -256,28 +355,20 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', requireLibrarianAuth, async (req, res) => {
-  const title = normalizeText(req.body.title);
-  const author = normalizeText(req.body.author);
-  const isbn = normalizeText(req.body.isbn);
-  const genre = normalizeText(req.body.genre);
-  const description = normalizeText(req.body.description) || null;
-  const language = normalizeText(req.body.language) || 'English';
+  const payload = buildBookPayload(req.body);
+  const validationError = validateBookPayload(payload);
 
-  if (!title || !author || !isbn || !genre) {
+  if (validationError) {
     return res.status(400).json({
-      error: 'title, author, isbn and genre are required',
+      error: validationError,
     });
   }
 
   try {
     const book = await prisma.book.create({
       data: {
-        title,
-        author,
-        isbn,
-        genre,
-        description,
-        language,
+        ...payload,
+        available: payload.availableCopies > 0,
       },
       select: BOOK_SELECT,
     });
@@ -301,6 +392,88 @@ router.post('/', requireLibrarianAuth, async (req, res) => {
 
     return res.status(500).json({
       error: 'Failed to create book',
+      detail: error.message,
+    });
+  }
+});
+
+router.put('/:id', requireLibrarianAuth, async (req, res) => {
+  const bookId = Number.parseInt(req.params.id, 10);
+
+  if (Number.isNaN(bookId)) {
+    return res.status(400).json({ error: 'Invalid book id' });
+  }
+
+  const payload = buildBookPayload(req.body);
+  const validationError = validateBookPayload(payload);
+
+  if (validationError) {
+    return res.status(400).json({
+      error: validationError,
+    });
+  }
+
+  try {
+    const existingBook = await prisma.book.findUnique({
+      where: { id: bookId },
+      select: {
+        id: true,
+        title: true,
+        isbn: true,
+        loans: {
+          select: {
+            returnDate: true,
+          },
+        },
+      },
+    });
+
+    if (!existingBook) {
+      return res.status(404).json({ error: 'Book not found' });
+    }
+
+    const activeLoanCount = existingBook.loans.filter((loan) => !loan.returnDate).length;
+
+    if (payload.totalCopies < activeLoanCount) {
+      return res.status(400).json({
+        error: `totalCopies cannot be less than the ${activeLoanCount} active loan(s) for this book`,
+      });
+    }
+
+    if (payload.availableCopies + activeLoanCount > payload.totalCopies) {
+      return res.status(400).json({
+        error: 'availableCopies is too high for the current number of active loans',
+      });
+    }
+
+    const book = await prisma.book.update({
+      where: { id: bookId },
+      data: {
+        ...payload,
+        available: payload.availableCopies > 0,
+      },
+      select: BOOK_SELECT,
+    });
+
+    await writeAuditLog(
+      'UPDATE_BOOK',
+      book.id,
+      `Librarian ${req.librarian.employeeId} updated book "${existingBook.title}" (${existingBook.isbn}).`
+    );
+
+    return res.json({
+      message: 'Book updated successfully',
+      book,
+    });
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(409).json({
+        error: 'A book with this ISBN already exists',
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to update book',
       detail: error.message,
     });
   }
