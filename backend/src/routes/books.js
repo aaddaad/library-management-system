@@ -20,6 +20,69 @@ const BOOK_SELECT = {
   createdAt: true,
 };
 
+const BOOK_DETAIL_INCLUDE = {
+  loans: {
+    orderBy: { checkoutDate: 'desc' },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          studentId: true,
+        },
+      },
+    },
+  },
+  ratings: {
+    orderBy: { createdAt: 'desc' },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          studentId: true,
+        },
+      },
+    },
+  },
+  holds: {
+    orderBy: { createdAt: 'desc' },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          studentId: true,
+        },
+      },
+    },
+  },
+  wishlists: {
+    orderBy: { createdAt: 'desc' },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          studentId: true,
+        },
+      },
+    },
+  },
+  _count: {
+    select: {
+      loans: true,
+      ratings: true,
+      holds: true,
+      wishlists: true,
+    },
+  },
+};
+
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -134,14 +197,30 @@ router.get('/:id', async (req, res) => {
   try {
     const book = await prisma.book.findUnique({
       where: { id: bookId },
-      select: BOOK_SELECT,
+      include: BOOK_DETAIL_INCLUDE,
     });
 
     if (!book) {
       return res.status(404).json({ error: 'Book not found' });
     }
 
-    res.json(book);
+    const ratingCount = book.ratings.length;
+    const averageRating =
+      ratingCount === 0
+        ? null
+        : Number((book.ratings.reduce((sum, rating) => sum + rating.stars, 0) / ratingCount).toFixed(2));
+
+    res.json({
+      success: true,
+      data: {
+        ...book,
+        stats: {
+          averageRating,
+          activeLoans: book.loans.filter((loan) => !loan.returnDate).length,
+          returnedLoans: book.loans.filter((loan) => Boolean(loan.returnDate)).length,
+        },
+      },
+    });
   } catch (error) {
     res.status(500).json({
       error: 'Failed to fetch book detail',
