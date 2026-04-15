@@ -19,7 +19,7 @@ function MyHistory() {
         return;
       }
 
-      const response = await fetch('http://localhost:3001/api/reader/my-borrows', {
+      const response = await fetch('http://localhost:3001/api/readers/my-borrows', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -37,7 +37,7 @@ function MyHistory() {
   const handleRenew = async (copyId) => {
     const token = localStorage.getItem('token');
     try {
-      const response = await fetch('http://localhost:3001/api/reader/renew', {
+      const response = await fetch('http://localhost:3001/api/readers/renew', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -62,7 +62,7 @@ function MyHistory() {
   const handleReturn = async (loanId) => {
     const token = localStorage.getItem('token');
     try {
-      const response = await fetch(`http://localhost:3001/api/reader/return/${loanId}`, {
+      const response = await fetch(`http://localhost:3001/api/readers/return/${loanId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });

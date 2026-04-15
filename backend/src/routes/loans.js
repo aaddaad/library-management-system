@@ -54,24 +54,29 @@ router.post('/borrow/:bookId', requireAuth, async (req, res, next) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    // 1. 检查书籍是否存在且可借
+    // 1. 检查书籍是否存在且有可借副本
     const book = await prisma.book.findUnique({
-      where: { id: Number(bookId) }
+      where: { id: Number(bookId) },
+      include: { copies: true }
     });
     if (!book) {
       return res.status(404).json({ message: 'Book not found' });
     }
-    if (book.availableCopies <= 0) {
+    const availableCopies = book.copies.filter(copy => copy.status === 'AVAILABLE');
+    if (availableCopies.length === 0) {
       return res.status(400).json({ message: 'No available copies of this book' });
     }
 
-    // 2. 检查是否已经借了同一本书且未归还
+    // 2. 检查是否已经借了同一本书的副本且未归还
     const existingLoan = await prisma.loan.findFirst({
       where: {
         userId,
-        bookId: Number(bookId),
+        copy: {
+          bookId: Number(bookId)
+        },
         returnDate: null
-      }
+      },
+      include: { copy: true }
     });
     if (existingLoan) {
       return res.status(400).json({ message: 'You have already borrowed this book and not returned it' });
@@ -91,14 +96,15 @@ router.post('/borrow/:bookId', requireAuth, async (req, res, next) => {
       }
     }
 
-    // 4. 创建借阅记录
+    // 4. 创建借阅记录，选择一个可用的副本
+    const selectedCopy = availableCopies[0]; // 选择第一个可用的副本
     const checkoutDate = new Date();
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + LOAN_DURATION_DAYS);
 
     const loan = await prisma.loan.create({
       data: {
-        bookId: Number(bookId),
+        copyId: selectedCopy.id,
         userId,
         checkoutDate,
         dueDate,
@@ -106,6 +112,12 @@ router.post('/borrow/:bookId', requireAuth, async (req, res, next) => {
         finePaid: false,
         fineForgiven: false
       }
+    });
+
+    // 更新副本状态为 BORROWED
+    await prisma.copy.update({
+      where: { id: selectedCopy.id },
+      data: { status: 'BORROWED' }
     });
 
     // 5. 减少可借副本数
@@ -148,7 +160,7 @@ router.post('/return/:loanId', requireAuth, async (req, res, next) => {
 
     const loan = await prisma.loan.findUnique({
       where: { id: Number(loanId) },
-      include: { book: true }
+      include: { copy: { include: { book: true } } }
     });
     if (!loan) {
       return res.status(404).json({ message: 'Loan record not found' });
@@ -179,10 +191,10 @@ router.post('/return/:loanId', requireAuth, async (req, res, next) => {
       }
     });
 
-    // 增加可借副本数
-    await prisma.book.update({
-      where: { id: loan.bookId },
-      data: { availableCopies: { increment: 1 } }
+    // 更新副本状态为 AVAILABLE
+    await prisma.copy.update({
+      where: { id: loan.copyId },
+      data: { status: 'AVAILABLE' }
     });
 
     await prisma.auditLog.create({
@@ -191,7 +203,7 @@ router.post('/return/:loanId', requireAuth, async (req, res, next) => {
         action: 'RETURN',
         entity: 'Loan',
         entityId: loan.id,
-        detail: `User ${userId} returned book ${loan.bookId}, fine: ${fine}`
+        detail: `User ${userId} returned book ${loan.copy.bookId}, fine: ${fine}`
       }
     });
 
@@ -210,7 +222,7 @@ router.get('/me', requireAuth, async (req, res, next) => {
     const userId = req.user.id;
     const loans = await prisma.loan.findMany({
       where: { userId },
-      include: { book: true },
+      include: { copy: { include: { book: true } } },
       orderBy: { checkoutDate: 'desc' }
     });
     res.json({ loans });
@@ -226,7 +238,7 @@ router.get('/admin/all', requireAuth, async (req, res, next) => {
   }
   try {
     const loans = await prisma.loan.findMany({
-      include: { user: true, book: true },
+      include: { user: true, copy: { include: { book: true } } },
       orderBy: { checkoutDate: 'desc' }
     });
     res.json({ loans });
@@ -245,8 +257,12 @@ router.post('/admin/force-borrow/:bookId/:userId', requireAuth, async (req, res,
     const targetUserId = Number(userId);
     const targetBookId = Number(bookId);
 
-    const book = await prisma.book.findUnique({ where: { id: targetBookId } });
-    if (!book || book.availableCopies <= 0) {
+    const book = await prisma.book.findUnique({
+      where: { id: targetBookId },
+      include: { copies: true }
+    });
+    const availableCopies = book.copies.filter(copy => copy.status === 'AVAILABLE');
+    if (!book || availableCopies.length === 0) {
       return res.status(400).json({ message: 'Book not available' });
     }
 
@@ -254,30 +270,34 @@ router.post('/admin/force-borrow/:bookId/:userId', requireAuth, async (req, res,
     const existing = await prisma.loan.findFirst({
       where: {
         userId: targetUserId,
-        bookId: targetBookId,
+        copy: {
+          bookId: targetBookId
+        },
         returnDate: null
-      }
+      },
+      include: { copy: true }
     });
     if (existing) {
       return res.status(400).json({ message: 'User already borrowed this book' });
     }
 
+    const selectedCopy = availableCopies[0];
     const checkoutDate = new Date();
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + LOAN_DURATION_DAYS);
 
     const loan = await prisma.loan.create({
       data: {
-        bookId: targetBookId,
+        copyId: selectedCopy.id,
         userId: targetUserId,
         checkoutDate,
         dueDate
       }
     });
 
-    await prisma.book.update({
-      where: { id: targetBookId },
-      data: { availableCopies: { decrement: 1 } }
+    await prisma.copy.update({
+      where: { id: selectedCopy.id },
+      data: { status: 'BORROWED' }
     });
 
     res.status(201).json({ message: 'Force borrow successful', loan });
@@ -344,10 +364,24 @@ router.get('/books/search', requireLibrarianAuth, async (req, res, next) => {
           { isbn: { contains: keyword } },
           { author: { contains: keyword } }
         ]
+      },
+      include: {
+        copies: {
+          select: { status: true }
+        }
       }
     });
 
-    res.json({ books });
+    const booksWithCount = books.map(book => {
+      const availableCopies = book.copies.filter(c => c.status === 'AVAILABLE').length;
+      return {
+        ...book,
+        availableCopies: availableCopies,
+        totalCopies: book.copies.length
+      };
+    });
+
+    res.json({ books: booksWithCount });
   } catch (error) {
     next(error);
   }
@@ -358,7 +392,7 @@ router.get('/records', requireLibrarianAuth, async (req, res, next) => {
   try {
     const loans = await prisma.loan.findMany({
       where: { returnDate: null },
-      include: { user: true, book: true },
+      include: { user: true, copy: { include: { book: true } } },
       orderBy: { checkoutDate: 'desc' }
     });
     res.json({ loans });
@@ -380,15 +414,25 @@ router.post('/lend', requireLibrarianAuth, async (req, res, next) => {
       return res.status(404).json({ message: 'Student not found' });
     }
 
-    const book = await prisma.book.findUnique({ where: { id: Number(bookId) } });
-    if (!book || book.availableCopies <= 0) {
+    const book = await prisma.book.findUnique({
+      where: { id: Number(bookId) },
+      include: { copies: true }
+    });
+    if (!book) {
+      return res.status(404).json({ message: 'Book not found' });
+    }
+
+    const availableCopies = book.copies.filter(copy => copy.status === 'AVAILABLE');
+    if (availableCopies.length === 0) {
       return res.status(400).json({ message: 'Book not available' });
     }
 
     const existingLoan = await prisma.loan.findFirst({
       where: {
         userId: Number(userId),
-        bookId: Number(bookId),
+        copy: {
+          bookId: Number(bookId)
+        },
         returnDate: null
       }
     });
@@ -400,10 +444,12 @@ router.post('/lend', requireLibrarianAuth, async (req, res, next) => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + LOAN_DURATION_DAYS);
 
+    const selectedCopy = availableCopies[0];
+
     const loan = await prisma.loan.create({
       data: {
         userId: Number(userId),
-        bookId: Number(bookId),
+        copyId: selectedCopy.id,
         checkoutDate,
         dueDate,
         fineAmount: 0,
@@ -412,9 +458,9 @@ router.post('/lend', requireLibrarianAuth, async (req, res, next) => {
       }
     });
 
-    await prisma.book.update({
-      where: { id: Number(bookId) },
-      data: { availableCopies: { decrement: 1 } }
+    await prisma.copy.update({
+      where: { id: selectedCopy.id },
+      data: { status: 'BORROWED' }
     });
 
     await prisma.auditLog.create({
@@ -427,7 +473,15 @@ router.post('/lend', requireLibrarianAuth, async (req, res, next) => {
       }
     });
 
-    res.status(201).json({ message: 'Borrow successful', loan });
+    res.status(201).json({
+      message: 'Borrow successful',
+      loan: {
+        id: loan.id,
+        bookTitle: book.title,
+        checkoutDate,
+        dueDate
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -443,7 +497,7 @@ router.post('/return', requireLibrarianAuth, async (req, res, next) => {
 
     const loan = await prisma.loan.findUnique({
       where: { id: Number(loanId) },
-      include: { book: true }
+      include: { copy: { include: { book: true } } }
     });
     if (!loan) {
       return res.status(404).json({ message: 'Loan record not found' });
@@ -460,9 +514,9 @@ router.post('/return', requireLibrarianAuth, async (req, res, next) => {
       data: { returnDate, fineAmount: fine, finePaid: false }
     });
 
-    await prisma.book.update({
-      where: { id: loan.bookId },
-      data: { availableCopies: { increment: 1 } }
+    await prisma.copy.update({
+      where: { id: loan.copyId },
+      data: { status: 'AVAILABLE' }
     });
 
     await prisma.auditLog.create({
@@ -471,7 +525,7 @@ router.post('/return', requireLibrarianAuth, async (req, res, next) => {
         action: 'ADMIN_RETURN',
         entity: 'Loan',
         entityId: loan.id,
-        detail: `Librarian ${req.librarian.id} returned book ${loan.bookId} for user ${loan.userId}`
+        detail: `Librarian ${req.librarian.id} returned book ${loan.copy.bookId} for user ${loan.userId}`
       }
     });
 

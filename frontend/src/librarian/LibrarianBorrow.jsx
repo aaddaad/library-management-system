@@ -209,7 +209,7 @@ export default function LibrarianBorrow() {
                     {loan.user?.name || '未知'} ({loan.user?.studentId || '无'})
                   </td>
                   <td className="border border-gray-200 px-3 py-2">
-                    {loan.book?.title || '未知'}
+                    {loan.copy?.book?.title || '未知'}
                   </td>
                   <td className="border border-gray-200 px-3 py-2">{new Date(loan.checkoutDate).toLocaleDateString()}</td>
                   <td className="border border-gray-200 px-3 py-2">{new Date(loan.dueDate).toLocaleDateString()}</td>

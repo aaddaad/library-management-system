@@ -9,10 +9,9 @@ async function main() {
   await prisma.wishlist.deleteMany();
   await prisma.rating.deleteMany();
   await prisma.loan.deleteMany();
+  await prisma.copy.deleteMany();
   await prisma.book.deleteMany();
   await prisma.user.deleteMany();
-  await prisma.librarian.deleteMany();
-  await prisma.config.deleteMany();
 
   // 创建用户
   const adminPassword = await bcrypt.hash('admin123', 10);
@@ -34,22 +33,6 @@ async function main() {
       email: 'librarian@library.com',
       passwordHash: librarianPassword,
       role: 'LIBRARIAN',
-    },
-  });
-
-  await prisma.librarian.create({
-    data: {
-      employeeId: 'lib001',
-      name: '馆员张三',
-      password: librarianPassword,
-    },
-  });
-
-  await prisma.librarian.create({
-    data: {
-      employeeId: 'lib002',
-      name: '馆员李四',
-      password: librarianPassword,
     },
   });
 
@@ -102,30 +85,31 @@ async function main() {
     { title: 'The Five Dysfunctions of a Team', author: 'Patrick Lencioni', genre: 'Management', available: false },
   ];
 
-  for (const book of booksData) {
-  await prisma.book.create({
-    data: {
-      title: book.title,
-      author: book.author,
-      isbn: `ISBN-${Math.random().toString(36).substring(2, 10)}`,
-      genre: book.genre,
-      description: `${book.title} is a great read.`,
-      language: 'English',
-      shelfLocation: `${book.genre}-${Math.floor(Math.random() * 100)}`,
-      available: book.available,                 // 保留旧字段
-      totalCopies: 1,                            // 新增
-      availableCopies: book.available ? 1 : 0    // 新增：根据 available 初始化
-    }
-  });
-  }
+  for (const bookData of booksData) {
+    const book = await prisma.book.create({
+      data: {
+        title: bookData.title,
+        author: bookData.author,
+        isbn: `ISBN-${Math.random().toString(36).substring(2, 10)}`,
+        genre: bookData.genre,
+        description: `${bookData.title} is a great read.`,
+        language: 'English',
+      }
+    });
 
-  // 添加配置项
-  await prisma.config.create({
-    data: {
-      key: 'FINE_RATE_PER_DAY',
-      value: '0.50',
-    },
-  });
+    // Create a copy for each book
+    await prisma.copy.create({
+      data: {
+        bookId: book.id,
+        barcode: `BC-${Math.random().toString(36).substring(2, 10)}`,
+        floor: Math.floor(Math.random() * 5) + 1,
+        libraryArea: bookData.genre,
+        shelfNo: `${bookData.genre}-${Math.floor(Math.random() * 100)}`,
+        shelfLevel: Math.floor(Math.random() * 5) + 1,
+        status: bookData.available ? 'AVAILABLE' : 'DAMAGED',
+      }
+    });
+  }
 
   console.log('Seed data inserted successfully');
 }

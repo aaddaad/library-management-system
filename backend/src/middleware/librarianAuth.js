@@ -9,16 +9,7 @@ function normalizeQueryResult(result) {
 }
 
 async function findLibrarianById(id) {
-  if (prisma.librarian) {
-    return prisma.librarian.findUnique({ where: { id } });
-  }
-  const result = await prisma.$queryRaw`
-    SELECT id, employee_id AS "employeeId", name, created_at AS "createdAt", updated_at AS "updatedAt"
-    FROM librarians
-    WHERE id = ${id}
-    LIMIT 1
-  `;
-  return normalizeQueryResult(result);
+  return await prisma.user.findUnique({ where: { id: parseInt(id) } });
 }
 
 function extractBearerToken(authorizationHeader) {

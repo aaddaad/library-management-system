@@ -87,8 +87,8 @@ function MyHistory() {
             <tbody>
               {history.map((loan) => (
                 <tr key={loan.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                  <td style={{ padding: '12px' }}>{loan.book?.title || '未知'}</td>
-                  <td style={{ padding: '12px' }}>{loan.book?.author || '未知'}</td>
+                  <td style={{ padding: '12px' }}>{loan.copy?.book?.title || '未知'}</td>
+                  <td style={{ padding: '12px' }}>{loan.copy?.book?.author || '未知'}</td>
                   <td style={{ padding: '12px' }}>{new Date(loan.checkoutDate).toLocaleDateString()}</td>
                   <td style={{ padding: '12px' }}>{new Date(loan.dueDate).toLocaleDateString()}</td>
                   <td style={{ padding: '12px' }}>{loan.returnDate ? new Date(loan.returnDate).toLocaleDateString() : '-'}</td>

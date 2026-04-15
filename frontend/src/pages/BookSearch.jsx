@@ -27,7 +27,7 @@ function BookSearch() {
       if (searchAuthor) params.append('author', searchAuthor);
       if (searchKeyword) params.append('keyword', searchKeyword);
 
-      const response = await fetch(`http://localhost:3001/books/search?${params}`);
+      const response = await fetch(`http://localhost:3001/api/books/search?${params}`);
       const result = await response.json();
 
       if (result.success) {
@@ -51,7 +51,7 @@ function BookSearch() {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/api/reader/available-copies/${bookId}`, {
+      const response = await fetch(`http://localhost:3001/api/readers/available-copies/${bookId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -72,7 +72,7 @@ function BookSearch() {
 
     setMessage('');
     try {
-      const response = await fetch(`http://localhost:3001/api/reader/borrow/${copyId}`, {
+      const response = await fetch(`http://localhost:3001/api/readers/borrow/${copyId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -99,7 +99,7 @@ function BookSearch() {
     setDetailError('');
 
     try {
-      const response = await fetch(`http://localhost:3001/books/${bookId}`);
+      const response = await fetch(`http://localhost:3001/api/books/${bookId}`);
       const result = await response.json();
 
       if (!response.ok || !result.success) {
@@ -175,6 +175,11 @@ function BookSearch() {
                   <p><strong>Author:</strong> {book.author}</p>
                   <p><strong>ISBN:</strong> {book.isbn}</p>
                   <p><strong>Stock:</strong> {book.availableCopies || 0} / {book.totalCopies || 1}</p>
+                  {book.availableCopies === 0 && (
+                    <div style={{ marginTop: '8px', padding: '8px', background: '#f8d7da', borderRadius: '4px', color: '#721c24', fontSize: '14px' }}>
+                      Book not available
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
                     <button
                       onClick={() => handleViewDetails(book.id)}

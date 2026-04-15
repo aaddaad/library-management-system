@@ -2,10 +2,12 @@ const express = require('express');
 const cors = require('cors');
 
 const readersRouter = require('./routes/readers');
+const readerBorrowRouter = require('./routes/reader-borrow');
 const authRouter = require('./routes/auth');
 const loansRouter = require('./routes/loans');
 const announcementsRouter = require('./routes/announcements');
 const usersRouter = require('./routes/users');
+const booksRouter = require('./routes/books');
 
 const app = express();
 
@@ -17,12 +19,14 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/readers', readersRouter);
+app.use('/api/readers', readerBorrowRouter);
 app.use('/api/auth', authRouter);
 
 app.use('/api/librarian/auth', authRouter);      
 app.use('/api/loans', loansRouter);              
 app.use('/api/announcements', announcementsRouter);              
 app.use('/api/users', usersRouter);              
+app.use('/api/books', booksRouter);              
 
 
 app.use((req, res) => {
