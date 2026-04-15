@@ -141,3 +141,8 @@ vite.config.ts.timestamp-*
 generate-token.js
 
 **/Login.jsx
+
+# Database files
+**/dev.db
+**/dev.db-shm
+**/dev.db-wal
